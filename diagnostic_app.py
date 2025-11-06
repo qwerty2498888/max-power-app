@@ -3,10 +3,10 @@ from dash import html, dcc
 import os
 import sys
 
-print('=== MAX POWER DIAGNOSTICS ===')
-print('Python:', sys.version)
-print('Workdir:', os.getcwd())
-print('Files:', [f for f in os.listdir('.') if f.endswith('.py') or f.endswith('.txt')])
+print("=== MAX POWER DIAGNOSTICS ===")
+print("Python:", sys.version)
+print("Workdir:", os.getcwd())
+print("PORT:", os.environ.get("PORT", "8080"))
 
 app = dash.Dash(__name__)
 server = app.server
@@ -30,5 +30,5 @@ app.layout = html.Div([
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    print(f'🚀 STARTING SERVER ON PORT {port}')
+    print(f"🚀 STARTING SERVER ON PORT {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
