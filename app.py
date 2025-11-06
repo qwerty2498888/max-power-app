@@ -8,7 +8,9 @@ from flask_caching import Cache
 from urllib.parse import parse_qs
 import os
 from datetime import datetime
+import os
 
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 # Инициализация Dash приложения
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
@@ -4025,5 +4027,8 @@ def get_pc_ratio_data():
 
 # Запуск приложения
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    if DEBUG:
+        app.run(host="0.0.0.0", port=8080, debug=True)
+    else:
+        app.run(host="0.0.0.0", port=8080, debug=False)
 
