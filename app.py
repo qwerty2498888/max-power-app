@@ -1,4 +1,5 @@
 import yfinance as yf
+from curl_cffi import requests as curl_requests
 import dash
 from dash import dcc, html, Input, Output, State, dash_table
 import plotly.graph_objs as go
@@ -89,7 +90,8 @@ def load_expirations_from_file(ticker):
 
 def get_yfinance_expirations(ticker):
     try:
-        stock = yf.Ticker(ticker)
+        session = curl_requests.Session(impersonate="chrome110")
+        stock = yf.Ticker(ticker, session=session)
         return stock.options
     except Exception as e:
         print(f"Ошибка загрузки данных {ticker} из yfinance: {e}")
@@ -197,7 +199,9 @@ def normalize_ticker(ticker):
 def get_yfinance_options(ticker, expiration):
     """Кешированная функция для получения данных опционов из yfinance"""
     try:
-        stock = yf.Ticker(ticker)
+        # Используем curl_cffi для обхода блокировки
+        session = curl_requests.Session(impersonate="chrome110")
+        stock = yf.Ticker(ticker, session=session)
         option_chain = stock.option_chain(expiration)
         calls = option_chain.calls[['strike', 'openInterest', 'volume']].rename(
             columns={'openInterest': 'Call OI', 'volume': 'Call Volume'})
@@ -213,16 +217,18 @@ def get_yfinance_options(ticker, expiration):
 def get_yfinance_spot_price(ticker):
     """Кешированная функция для получения текущей цены из yfinance"""
     try:
+        session = curl_requests.Session(impersonate="chrome110")
+        
         # Для SPX используем SPY * 10.03
         if ticker == "^SPX":
-            spy_ticker = yf.Ticker("SPY")
+            spy_ticker = yf.Ticker("SPY", session=session)
             spy_data = spy_ticker.history(period="1d")
             if not spy_data.empty:
                 spy_price = spy_data['Close'].iloc[-1]
-                return spy_price * 10.034  # Умножаем цену SPY на 10.03
+                return spy_price * 10.034
 
         # Стандартная логика для других тикеров
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         if stock.history(period="1d").shape[0] > 0:
             return stock.history(period="1d")['Close'].iloc[-1]
     except Exception as e:
@@ -1009,20 +1015,23 @@ disclaimer_page = html.Div(
 
 def get_historical_data_for_chart(ticker):
     """Получает исторические данные с учетом замены SPX на SPY*10.03"""
-    if ticker == "^SPX":
-        # Для SPX используем данные SPY и умножаем на 10.03
-        spy_ticker = yf.Ticker("SPY")
-        data = spy_ticker.history(period='1d', interval='1m')
-        if not data.empty:
-            # Умножаем все ценовые колонки на 10.03
-            for col in ['Open', 'High', 'Low', 'Close']:
-                data[col] = data[col] * 10.034
-            # Volume оставляем как есть (не умножаем)
-        return data
-    else:
-        # Стандартная логика для других тикеров
-        stock = yf.Ticker(ticker)
-        return stock.history(period='1d', interval='1m')
+    try:
+        session = curl_requests.Session(impersonate="chrome110")
+        
+        if ticker == "^SPX":
+            # Для SPX используем данные SPY и умножаем на 10.03
+            spy_ticker = yf.Ticker("SPY", session=session)
+            data = spy_ticker.history(period='1d', interval='1m')
+            if not data.empty:
+                for col in ['Open', 'High', 'Low', 'Close']:
+                    data[col] = data[col] * 10.034
+            return data
+        else:
+            stock = yf.Ticker(ticker, session=session)
+            return stock.history(period='1d', interval='1m')
+    except Exception as e:
+        print(f"Ошибка загрузки исторических данных для {ticker}: {e}")
+        return pd.DataFrame()
 
 
 def calculate_vwap(data, ticker):
