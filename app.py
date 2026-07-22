@@ -10,8 +10,11 @@ import os
 from datetime import datetime
 
 # Инициализация Dash приложения
-app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app = dash.Dash(
+    __name__, suppress_callback_exceptions=True,
+title = 'Max Power',)
 server = app.server
+
 
 # Настройка кэширования
 cache = Cache(app.server, config={
@@ -210,12 +213,13 @@ def get_yfinance_options(ticker, expiration):
 def get_yfinance_spot_price(ticker):
     """Кешированная функция для получения текущей цены из yfinance"""
     try:
-        # Специальная обработка для SPX - используем XSP * 10
+        # Для SPX используем SPY * 10.03
         if ticker == "^SPX":
-            xsp_ticker = yf.Ticker("^XSP")
-            if xsp_ticker.history(period="1d").shape[0] > 0:
-                xsp_price = xsp_ticker.history(period="1d")['Close'].iloc[-1]
-                return xsp_price * 10  # Умножаем цену XSP на 10
+            spy_ticker = yf.Ticker("SPY")
+            spy_data = spy_ticker.history(period="1d")
+            if not spy_data.empty:
+                spy_price = spy_data['Close'].iloc[-1]
+                return spy_price * 10.034  # Умножаем цену SPY на 10.03
 
         # Стандартная логика для других тикеров
         stock = yf.Ticker(ticker)
@@ -360,27 +364,36 @@ def get_option_data(ticker, expirations):
         # Для SPX используем специальный расчет с ценой XSP*10
         if ticker == "^SPX":
             combined_data['Net GEX'] = (
-                (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.001) -
-                (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.001)
+                    (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.001) -
+                    (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.001)
             ).round(1)
 
             combined_data['AG'] = (
-                (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.005) * 8 +
-                (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.005) * 8
+                    (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.005) * 8 +
+                    (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.005) * 8
             ).round(1)
         else:
             # Стандартный расчет для других тикеров
             combined_data['Net GEX'] = (
-                (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.001) -
-                (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.001)
+                    (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.001) -
+                    (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.001)
             ).round(1)
 
             combined_data['AG'] = (
-                (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.005) * 8 +
-                (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.005) * 8
+                    (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.005) * 8 +
+                    (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.005) * 8
             ).round(1)
 
+        # Вычисляем Power Zone
+        combined_data['Power Zone'] = (
+                (combined_data['Call OI'] * spot_price / 100 * spot_price * 0.005) +
+                (combined_data['Put OI'] * spot_price / 100 * spot_price * 0.005) +
+                (combined_data['Call Volume'] * spot_price / 100 * spot_price * 0.005) +
+                (combined_data['Put Volume'] * spot_price / 100 * spot_price * 0.005)
+        ).round(1)
+
     return combined_data, available_dates, spot_price, stock
+
 
 
 # Функция для расчета статических уровней (без изменений)
@@ -995,15 +1008,15 @@ disclaimer_page = html.Div(
 
 
 def get_historical_data_for_chart(ticker):
-    """Получает исторические данные с учетом замены SPX на XSP*10"""
+    """Получает исторические данные с учетом замены SPX на SPY*10.03"""
     if ticker == "^SPX":
-        # Для SPX используем данные XSP и умножаем на 10
-        xsp_ticker = yf.Ticker("^XSP")
-        data = xsp_ticker.history(period='1d', interval='1m')
+        # Для SPX используем данные SPY и умножаем на 10.03
+        spy_ticker = yf.Ticker("SPY")
+        data = spy_ticker.history(period='1d', interval='1m')
         if not data.empty:
-            # Умножаем все ценовые колонки на 10
+            # Умножаем все ценовые колонки на 10.03
             for col in ['Open', 'High', 'Low', 'Close']:
-                data[col] = data[col] * 10
+                data[col] = data[col] * 10.034
             # Volume оставляем как есть (не умножаем)
         return data
     else:
@@ -1016,14 +1029,21 @@ def calculate_vwap(data, ticker):
     """Рассчитывает VWAP с учетом особенностей тикера"""
     if ticker == "^SPX":
         # Для SPX используем оригинальные данные SPX для расчета VWAP
-        spx_ticker = yf.Ticker("^SPX")
-        spx_data = spx_ticker.history(period='1d', interval='1m')
-        if not spx_data.empty:
-            spx_data['CumulativeVolume'] = spx_data['Volume'].cumsum()
-            spx_data['CumulativePV'] = (
-                        spx_data['Volume'] * (spx_data['High'] + spx_data['Low'] + spx_data['Close']) / 3).cumsum()
-            spx_data['VWAP'] = spx_data['CumulativePV'] / spx_data['CumulativeVolume']
-            return spx_data['VWAP']
+        spy_ticker = yf.Ticker("SPY")
+        spy_data = spy_ticker.history(period='1d', interval='1m')
+        if not spy_data.empty:
+            spy_data['CumulativeVolume'] = spy_data['Volume'].cumsum()
+            spy_data['CumulativePV'] = (
+                        spy_data['Volume'] * (spy_data['High'] + spy_data['Low'] + spy_data['Close']) / 3).cumsum()
+            spy_data['VWAP'] = spy_data['CumulativePV'] / spy_data['CumulativeVolume']
+            # Умножаем VWAP на 10.03 для соответствия цене SPX
+            return spy_data['VWAP'] * 10.034
+
+    # Стандартный расчет VWAP для других тикеров
+    data['CumulativeVolume'] = data['Volume'].cumsum()
+    data['CumulativePV'] = (data['Volume'] * (data['High'] + data['Low'] + data['Close']) / 3).cumsum()
+    data['VWAP'] = data['CumulativePV'] / data['CumulativeVolume']
+    return data['VWAP']
 
     # Стандартный расчет VWAP для других тикеров
     data['CumulativeVolume'] = data['Volume'].cumsum()
@@ -1143,7 +1163,7 @@ app.layout = html.Div([
                             'align-items': 'center',
                             'justify-content': 'center'
                         }),
-                        href="https://t.me/+M4gBrEs7gfxjMTFi",
+                        href="https://telegram.me/+M4gBrEs7gfxjMTFi",
                         target="_blank",
                         style={
                             'display': 'block',
@@ -2320,7 +2340,6 @@ def update_selected_params(btn_net, btn_ag, btn_call_oi, btn_put_oi, btn_call_vo
             button_classes["btn-power-zone"])  # Add return for new button
 
 
-# Callback для обновления графика опционов (возвращаем оригинальную версию)
 @app.callback(
     Output('options-chart', 'figure'),
     [Input('search-button', 'n_clicks'),
@@ -2391,7 +2410,23 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
     else:
         left_limit = right_limit = 0
 
-        # Создаем фигуру перед использованием
+    # Вычисляем нормализованные значения ТОЛЬКО для Call OI и Put OI
+    if not options_data.empty:
+        max_call_oi = options_data['Call OI'].max()
+        max_put_oi = options_data['Put OI'].max()
+
+        # Нормализуем только Call OI и Put OI
+        if max_call_oi > 0:
+            options_data['Call OI Normalized'] = (options_data['Call OI'] / max_call_oi) * 50
+        else:
+            options_data['Call OI Normalized'] = 0
+
+        if max_put_oi > 0:
+            options_data['Put OI Normalized'] = (options_data['Put OI'] / max_put_oi) * 50
+        else:
+            options_data['Put OI Normalized'] = 0
+
+    # Создаем фигуру перед использованием
     fig = go.Figure()
 
     # Оригинальная логика отображения параметров
@@ -2448,9 +2483,10 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Call OI":
+            # Используем нормализованные значения для Call OI
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
-                y=options_data['Call OI'],
+                y=options_data['Call OI Normalized'],
                 mode='lines+markers',
                 line=dict(shape='spline', smoothing=0.7),
                 marker=dict(size=8, color='#02d432'),
@@ -2462,9 +2498,10 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Put OI":
+            # Используем нормализованные значения для Put OI
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
-                y=options_data['Put OI'],
+                y=options_data['Put OI Normalized'],
                 mode='lines+markers',
                 line=dict(shape='spline', smoothing=0.7),
                 marker=dict(size=8, color='#f32d35'),
@@ -2476,6 +2513,7 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Call Volume":
+            # Оригинальные значения для Call Volume
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
                 y=options_data['Call Volume'],
@@ -2490,6 +2528,7 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Put Volume":
+            # Оригинальные значения для Put Volume
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
                 y=options_data['Put Volume'],
@@ -2512,6 +2551,30 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             annotation_position="top",
             annotation_font=dict(color="orange"),
         )
+
+    # Определяем диапазоны для осей Y
+    y2_min = 0
+    y2_max = 110  # Максимум для нормализованных значений
+
+    # Если выбраны другие параметры кроме Call OI/Put OI, нужно определить максимальное значение
+    if any(param in selected_params for param in ["AG", "Call Volume", "Put Volume", "Power Zone"]):
+        # Находим максимальное значение среди оригинальных параметров
+        max_values = []
+        if "AG" in selected_params:
+            max_values.append(options_data['AG'].max() if not options_data.empty else 0)
+        if "Call Volume" in selected_params:
+            max_values.append(options_data['Call Volume'].max() if not options_data.empty else 0)
+        if "Put Volume" in selected_params:
+            max_values.append(options_data['Put Volume'].max() if not options_data.empty else 0)
+        if "Power Zone" in selected_params and 'Power Zone' in options_data.columns:
+            max_values.append(options_data['Power Zone'].max() if not options_data.empty else 0)
+
+        if max_values:
+            y2_max = max(max_values) * 1.1  # Добавляем 10% отступа
+
+    # Если выбраны только Call OI и Put OI, используем фиксированный диапазон 0-110
+    elif all(param in ["Call OI", "Put OI"] for param in selected_params):
+        y2_max = 110
 
     # Оригинальное оформление графика
     fig.update_layout(
@@ -2537,7 +2600,8 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
             overlaying="y",
             showgrid=False,
             zeroline=False,
-            fixedrange=True
+            fixedrange=True,
+            range=[y2_min, y2_max]
         ),
         title="" + ticker,
         plot_bgcolor='#1e1e1e',
@@ -2565,6 +2629,7 @@ def update_options_chart(n_clicks, n_submit, dates, selected_params, ticker):
     )
 
     return fig
+
 
 
 # Добавим функцию для получения текущего значения VIX
@@ -2619,14 +2684,14 @@ def update_price_chart(n_clicks, n_submit, ticker):
         if current_vix < 20:
             price_range = 0.01
         elif 20 <= current_vix < 25:
-            price_range = 0.018
+            price_range = 0.014
         elif 25 <= current_vix < 30:
             price_range = 0.026
         else:
             price_range = 0.04
     elif ticker in ["^NDX", "^RUT", "^Dia"]:
         price_range = 0.017
-    elif ticker in ["SPY", "QQQ", "DIA", "XSP", "IWM"]:
+    elif ticker in ["SPY", "QQQ", "DIA", "XSP", "IWM", "GLD"]:
         price_range = 0.02
     elif ticker in ["^VIX"]:
         price_range = 0.5
@@ -3483,7 +3548,7 @@ def update_selected_params_oi_volume(btn_vol_spread, btn_call_oi, btn_put_oi, bt
             button_classes["btn-put-vol-oi-volume"])
 
 
-# Callback for updating OI Volume chart
+# Callback for updating OI Volume chart с нормализацией Call OI и Put OI
 @app.callback(
     Output('oi-volume-chart', 'figure'),
     [Input('search-button-oi-volume', 'n_clicks'),
@@ -3514,7 +3579,7 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             price_range = 0.04  # 4%
     elif ticker in ["^NDX", "^RUT", "^Dia"]:
         price_range = 0.017
-    elif ticker in ["SPY", "QQQ", "DIA", "XSP", "IWM"]:
+    elif ticker in ["SPY", "QQQ", "DIA", "XSP", "IWM", "GLD"]:
         price_range = 0.03
     elif ticker in ["^VIX"]:
         price_range = 0.5
@@ -3537,6 +3602,22 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             (options_data['Call Volume']) -
             (options_data['Put Volume'])
     ).round(1)
+
+    # Вычисляем нормализованные значения ТОЛЬКО для Call OI и Put OI
+    if not options_data.empty:
+        max_call_oi = options_data['Call OI'].max()
+        max_put_oi = options_data['Put OI'].max()
+
+        # Нормализуем только Call OI и Put OI
+        if max_call_oi > 0:
+            options_data['Call OI Normalized'] = (options_data['Call OI'] / max_call_oi) * 50
+        else:
+            options_data['Call OI Normalized'] = 0
+
+        if max_put_oi > 0:
+            options_data['Put OI Normalized'] = (options_data['Put OI'] / max_put_oi) * 50
+        else:
+            options_data['Put OI Normalized'] = 0
 
     # Create figure
     fig = go.Figure()
@@ -3567,9 +3648,10 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Call OI":
+            # Используем нормализованные значения для Call OI
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
-                y=options_data['Call OI'],
+                y=options_data['Call OI Normalized'],
                 mode='lines+markers',
                 line=dict(shape='spline', smoothing=0.7),
                 marker=dict(size=8, color='#02d432'),
@@ -3581,9 +3663,10 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Put OI":
+            # Используем нормализованные значения для Put OI
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
-                y=options_data['Put OI'],
+                y=options_data['Put OI Normalized'],
                 mode='lines+markers',
                 line=dict(shape='spline', smoothing=0.7),
                 marker=dict(size=8, color='#f32d35'),
@@ -3595,6 +3678,7 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Call Volume":
+            # Используем оригинальные значения для Call Volume (без нормализации)
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
                 y=options_data['Call Volume'],
@@ -3609,6 +3693,7 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             ))
 
         elif parameter == "Put Volume":
+            # Используем оригинальные значения для Put Volume (без нормализации)
             fig.add_trace(go.Scatter(
                 x=options_data['strike'],
                 y=options_data['Put Volume'],
@@ -3631,6 +3716,132 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             annotation_position="top",
             annotation_font=dict(color="orange"),
         )
+
+    # Определяем диапазоны для осей Y
+    y2_min = 0
+
+    # Проверяем, какие параметры выбраны
+    has_oi = any(param in selected_params for param in ["Call OI", "Put OI"])
+    has_volume = any(param in selected_params for param in ["Call Volume", "Put Volume"])
+    has_volume_spread = "Volume Spread" in selected_params
+
+    # Если выбраны и OI, и Volume, нужно найти компромиссный диапазон
+    if has_oi and has_volume:
+        # Нормализованные OI всегда в диапазоне 0-110
+        # Для Volume нужно найти максимальное значение и масштабировать его, чтобы оно не выходило за пределы
+        max_volume_value = 0
+        if "Call Volume" in selected_params:
+            max_volume_value = max(max_volume_value, options_data['Call Volume'].max())
+        if "Put Volume" in selected_params:
+            max_volume_value = max(max_volume_value, options_data['Put Volume'].max())
+
+        # Масштабируем Volume так, чтобы максимальное значение было в пределах 110
+        if max_volume_value > 0:
+            # Создаем масштабированные колонки для Volume
+            scale_factor = 110 / max_volume_value
+            options_data['Call Volume Scaled'] = options_data['Call Volume'] * scale_factor
+            options_data['Put Volume Scaled'] = options_data['Put Volume'] * scale_factor
+
+            # Обновляем трассы для Volume с масштабированными значениями
+            # Сначала удаляем старые трассы Volume
+            fig.data = []
+            # Пересоздаем все трассы с масштабированными Volume
+            for parameter in selected_params:
+                hover_texts = [
+                    f"Strike: {strike}<br>Call OI: {coi}<br>Put OI: {poi}<br>Call Volume: {cvol}<br>Put Volume: {pvol}<br>{parameter}: {val}"
+                    for strike, coi, poi, cvol, pvol, val in zip(
+                        options_data['strike'],
+                        options_data['Call OI'],
+                        options_data['Put OI'],
+                        options_data['Call Volume'],
+                        options_data['Put Volume'],
+                        options_data[parameter]
+                    )
+                ]
+
+                if parameter == "Volume Spread":
+                    fig.add_trace(go.Bar(
+                        x=options_data['strike'],
+                        y=options_data['Volume Spread'],
+                        marker_color=['#22b5ff' if v >= 0 else 'red' for v in options_data['Volume Spread']],
+                        name="Volume Spread",
+                        hovertext=hover_texts,
+                        hoverinfo="text",
+                        marker=dict(line=dict(width=0))
+                    ))
+                elif parameter == "Call OI":
+                    fig.add_trace(go.Scatter(
+                        x=options_data['strike'],
+                        y=options_data['Call OI Normalized'],
+                        mode='lines+markers',
+                        line=dict(shape='spline', smoothing=0.7),
+                        marker=dict(size=8, color='#02d432'),
+                        fill='tozeroy',
+                        name="Call OI",
+                        hovertext=hover_texts,
+                        hoverinfo="text",
+                        yaxis='y2'
+                    ))
+                elif parameter == "Put OI":
+                    fig.add_trace(go.Scatter(
+                        x=options_data['strike'],
+                        y=options_data['Put OI Normalized'],
+                        mode='lines+markers',
+                        line=dict(shape='spline', smoothing=0.7),
+                        marker=dict(size=8, color='#f32d35'),
+                        fill='tozeroy',
+                        name="Put OI",
+                        hovertext=hover_texts,
+                        hoverinfo="text",
+                        yaxis='y2'
+                    ))
+                elif parameter == "Call Volume":
+                    fig.add_trace(go.Scatter(
+                        x=options_data['strike'],
+                        y=options_data['Call Volume Scaled'],
+                        mode='lines+markers',
+                        line=dict(shape='spline', smoothing=0.7),
+                        marker=dict(size=8, color='#003cfe'),
+                        fill='tozeroy',
+                        name="Call Volume",
+                        hovertext=hover_texts,
+                        hoverinfo="text",
+                        yaxis='y2'
+                    ))
+                elif parameter == "Put Volume":
+                    fig.add_trace(go.Scatter(
+                        x=options_data['strike'],
+                        y=options_data['Put Volume Scaled'],
+                        mode='lines+markers',
+                        line=dict(shape='spline', smoothing=0.7),
+                        marker=dict(size=8, color='#e55f04'),
+                        fill='tozeroy',
+                        name="Put Volume",
+                        hovertext=hover_texts,
+                        hoverinfo="text",
+                        yaxis='y2'
+                    ))
+
+            y2_max = 110
+        else:
+            y2_max = 110
+    elif has_oi:
+        # Только OI - фиксированный диапазон
+        y2_max = 110
+    elif has_volume:
+        # Только Volume - динамический диапазон
+        max_volume = 0
+        if "Call Volume" in selected_params:
+            max_volume = max(max_volume, options_data['Call Volume'].max())
+        if "Put Volume" in selected_params:
+            max_volume = max(max_volume, options_data['Put Volume'].max())
+        y2_max = max_volume * 1.1 if max_volume > 0 else 110
+    elif has_volume_spread:
+        # Только Volume Spread - динамический диапазон
+        vol_spread_max = abs(options_data['Volume Spread']).max() * 1.1
+        y2_max = vol_spread_max if vol_spread_max > 0 else 110
+    else:
+        y2_max = 110
 
     # Original chart styling
     fig.update_layout(
@@ -3656,7 +3867,8 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
             overlaying="y",
             showgrid=False,
             zeroline=False,
-            fixedrange=True
+            fixedrange=True,
+            range=[y2_min, y2_max]
         ),
         title=f"difference between call and put volumes {ticker}",
         plot_bgcolor='#1e1e1e',
@@ -3684,6 +3896,7 @@ def update_oi_volume_chart(n_clicks, n_submit, dates, selected_params, ticker):
     )
 
     return fig
+
 
 # Callback for updating OI Volume price chart
 @app.callback(
