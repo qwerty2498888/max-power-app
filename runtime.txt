@@ -1,1 +1,6 @@
-python-3.11.0
+
+flask_caching 
+dash 
+yfinance 
+pandas 
+plotly 
